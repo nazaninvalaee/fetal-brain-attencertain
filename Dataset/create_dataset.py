@@ -191,6 +191,32 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000):
 
     return dataset
 
+def count_slices_in_filepaths(filepaths_list, slices_per_volume=None):
+    """
+    Counts the total number of 2D slices that would be yielded by the data_generator
+    for a given list of file paths. This involves loading each 3D volume
+    to get its shape.
+    """
+    total_slices = 0
+    for img_path, _ in tqdm(filepaths_list, desc="Counting Slices", ncols=75, leave=False):
+        try:
+            img_volume = nib.load(img_path).get_fdata()
+            axes = [0, 1, 2] # Saggital, Coronal, Axial
+            for axis in axes:
+                slice_shape = img_volume.shape[axis]
+                if slices_per_volume is not None and slices_per_volume > 0:
+                    # If slices_per_volume is specified, use that count
+                    total_slices += slices_per_volume
+                else:
+                    # Otherwise, count all slices along this axis
+                    total_slices += slice_shape
+            del img_volume # Free memory after getting shape
+            gc.collect()
+        except Exception as e:
+            print(f"Warning: Could not count slices for {img_path}: {e}")
+            continue
+    return total_slices
+
 # --- Main create_dataset function for external calls ---
 # This is the function you will call from your Colab notebook
 def create_dataset(path1, path2, n=40, s=0.05):
