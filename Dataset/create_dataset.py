@@ -160,7 +160,7 @@ def data_generator(filepaths_list, slices_per_volume=None):
 
 
 # --- Function to create TensorFlow Datasets from generators ---
-def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000):
+def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True):
     """
     Creates a TensorFlow Dataset from the data generator.
 
@@ -168,12 +168,11 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000):
         filepaths_list (list): List of (input_nii_path, output_nii_path) tuples.
         batch_size (int): Batch size for the dataset.
         shuffle_buffer_size (int): Size of the buffer for shuffling elements.
+        is_training (bool): If True, apply .repeat() and larger shuffle buffer.
 
     Returns:
         tf.data.Dataset: A TensorFlow dataset that yields batches of (image, label).
     """
-    # Define output shapes and types for the generator
-    # Assuming slices are 256x256
     output_signature = (
         tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image
         tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)      # Label
@@ -184,10 +183,15 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000):
         output_signature=output_signature
     )
 
-    # Shuffle, batch, and prefetch for efficient training/evaluation
-    dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+    if is_training:
+        dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.repeat() # *** IMPORTANT: Add .repeat() for training dataset ***
+        dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+    else:
+        # For validation/test, typically you don't repeat, and shuffle might not be needed
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
     return dataset
 
