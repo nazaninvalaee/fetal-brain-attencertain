@@ -45,9 +45,11 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     return img_final, label_final
 
 # --- This function now only handles file paths, not image data ---
+# --- This function now correctly filters and matches file paths ---
 def prepare_filepaths(path1, path2, n=40):
     """
     Prepares lists of (input_nii_path, output_nii_path) tuples.
+    It now explicitly filters for T2w images and their corresponding dseg labels.
 
     Args:
         path1 (str): Path to the folder containing 3D input MRI volumes (.nii.gz).
@@ -62,28 +64,43 @@ def prepare_filepaths(path1, path2, n=40):
     if not path2.endswith('/'):
         path2 += '/'
 
-    input_filenames = sorted([f for f in os.listdir(path1) if f.endswith('.nii.gz')])
-    output_filenames = sorted([f for f in os.listdir(path2) if f.endswith('.nii.gz')])
+    # Filter for T2w images in the input directory
+    input_image_filenames = sorted([f for f in os.listdir(path1) if f.endswith('_T2w.nii.gz')])
+    
+    # Store output filenames with their base names for easy lookup
+    # We'll prioritize _dseg.nii.gz as the target label for now.
+    output_label_map = {}
+    for f in os.listdir(path2):
+        if f.endswith('_dseg.nii.gz'):
+            # Extract base name like 'sub-040_rec-mial'
+            base_name = f.replace('_dseg.nii.gz', '')
+            output_label_map[base_name] = os.path.join(path2, f)
+        # If you wanted to use _ddseg.nii.gz as the label, you'd add:
+        # elif f.endswith('_ddseg.nii.gz'):
+        #     base_name = f.replace('_ddseg.nii.gz', '')
+        #     output_label_map[base_name] = os.path.join(path2, f)
+
 
     matched_filepaths = []
-    # Assuming input and output filenames correspond after sorting (e.g., sub-001.nii.gz and sub-001_dseg.nii.gz)
-    # You might want to add a more robust matching logic if filenames are very different.
-    for i in range(min(n, len(input_filenames))): # Limit to 'n' volumes
-        f1_name = input_filenames[i]
-        f2_name = f1_name[:-10] + 'dseg' + f1_name[-7:] # Reconstruct output filename
+    # Limit to 'n' volumes from the filtered input images
+    for i in range(min(n, len(input_image_filenames))):
+        img_filename = input_image_filenames[i]
+        
+        # Extract the base name for matching (e.g., 'sub-040_rec-mial')
+        base_name = img_filename.replace('_T2w.nii.gz', '')
+        
+        # Look up the corresponding label file in the output directory map
+        label_path = output_label_map.get(base_name)
 
-        input_path = os.path.join(path1, f1_name)
-        output_path = os.path.join(path2, f2_name)
-
-        if os.path.exists(output_path): # Check if the corresponding output file exists
-            matched_filepaths.append((input_path, output_path))
+        if label_path and os.path.exists(label_path): # Check if the corresponding output label file exists
+            matched_filepaths.append((os.path.join(path1, img_filename), label_path))
         else:
-            print(f"Warning: Corresponding output file not found for {f1_name}. Skipping.")
+            print(f"Warning: Corresponding _dseg.nii.gz label not found in {path2} for input {img_filename}. Skipping.")
 
     if not matched_filepaths:
-        raise ValueError("No matching NIfTI files found in the specified paths.")
+        raise ValueError("No matching T2w image and _dseg label NIfTI files found in the specified paths.")
 
-    print(f"Prepared {len(matched_filepaths)} volume pairs for processing.")
+    print(f"Prepared {len(matched_filepaths)} T2w image-label pairs for processing.")
     return matched_filepaths
 
 
