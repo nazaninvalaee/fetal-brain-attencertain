@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf # Import TensorFlow for model inference
-from Testing.evaluation_metrics import *
+from Testing.evaluation_metrics import * # Assuming these are correctly defined
 from skimage.segmentation import find_boundaries
 from tqdm import tqdm
 
@@ -16,18 +16,21 @@ from Models.ensem_4_mod_4_no_mod import create_model as create_segmentation_mode
 def get_count(output, actual=[]):
     req = np.zeros((256, 256), dtype=np.uint8)
     # Ensure output is reshaped correctly for a single prediction before processing
-    # output shape after squeezing is (256, 256, 8) or (1, 256, 256, 8) from model prediction
-    if output.ndim == 4: # If batch dimension is present (e.g., (1, 256, 256, 8))
+    # output shape after squeezing is (256, 256, NUM_CLASSES) or (1, 256, 256, NUM_CLASSES) from model prediction
+    if output.ndim == 4: # If batch dimension is present (e.g., (1, 256, 256, NUM_CLASSES))
         out_probs = output[0] # Take the first (and only) sample in the batch
-    else: # If it's already (256, 256, 8)
+    else: # If it's already (256, 256, NUM_CLASSES)
         out_probs = output
 
     # Argmax across the class dimension to get the predicted class for each pixel
     req = np.argmax(out_probs, axis=-1).astype(np.uint8)
 
-    tp = np.zeros(8)
-    fp = np.zeros(8)
-    fn = np.zeros(8)
+    # Determine NUM_CLASSES dynamically from the model output, or use a constant
+    NUM_CLASSES = out_probs.shape[-1] # This is robust!
+
+    tp = np.zeros(NUM_CLASSES)
+    fp = np.zeros(NUM_CLASSES)
+    fn = np.zeros(NUM_CLASSES)
 
     if list(actual): # Only calculate TP/FP/FN if actual (ground truth) is provided
         for i in range(256):
@@ -35,22 +38,36 @@ def get_count(output, actual=[]):
                 predicted_class = req[i, j]
                 true_class = actual[i, j]
 
-                if predicted_class == true_class:
-                    tp[predicted_class] += 1
-                else:
-                    fp[predicted_class] += 1
-                    fn[true_class] += 1
+                # Ensure predicted_class and true_class are within NUM_CLASSES bounds
+                # This handles potential issues if a class outside 0-NUM_CLASSES-1 is predicted/present
+                if 0 <= predicted_class < NUM_CLASSES and 0 <= true_class < NUM_CLASSES:
+                    if predicted_class == true_class:
+                        tp[predicted_class] += 1
+                    else:
+                        fp[predicted_class] += 1
+                        fn[true_class] += 1
+                elif predicted_class >= NUM_CLASSES:
+                    # Increment FP for out-of-bound prediction (might indicate a problem)
+                    # Or simply ignore if this is expected for some reason. For now, treat as FP.
+                    fp[predicted_class % NUM_CLASSES] += 1 # Map to a valid index if possible, or handle error
+                elif true_class >= NUM_CLASSES:
+                    # Increment FN for out-of-bound true class (might indicate a problem with labels)
+                    fn[true_class % NUM_CLASSES] += 1
+
 
     if not list(actual):
         return req
 
     return tp, fp, fn, req
 
-# Function for calculating standard evaluation metrics for each class (remains the same)
+# Function for calculating standard evaluation metrics for each class (remains the same in logic)
 def calc_met(tp, fp, fn, total, k):
+    # Determine NUM_CLASSES from the length of tp/fp/fn arrays
+    NUM_CLASSES = len(tp)
+
     prec, dice, jac, sens = [], [], [], []
 
-    for i in range(8):
+    for i in range(NUM_CLASSES): # Use NUM_CLASSES here
         prec.append(precision(tp[i], fp[i]))
         sens.append(sensitivity(tp[i], fn[i]))
         dice.append(dice_score(tp[i], fp[i], fn[i]))
@@ -62,6 +79,9 @@ def calc_met(tp, fp, fn, total, k):
     # Calculate averages if k == 0
     # Filter out 1s from metrics lists if class is not present (denominator was 0)
     # Or handle them as is, assuming 1 is desired for empty classes. Your current logic uses 1.
+    # Note: If some metrics are 1.0 due to 0/0 (class not present), averaging them will skew the overall mean.
+    # Consider filtering out classes with no ground truth or no predictions if a more 'true' average is desired.
+    # For now, keeping your existing averaging logic.
     avg_prec = round(np.mean(prec), 2)
     avg_dice = round(np.mean(dice), 2)
     avg_jac = round(np.mean(jac), 2)
@@ -100,27 +120,46 @@ def cal_avg_metric(metrics):
             print(f"\nMetrics no. {c+1} for the average of all brain parts:")
         print(f"Mean: {mean_value}, Std: {std_value}")
 
-# Function for calculating and printing average and SD for each metric for each class (remains the same)
+# Function for calculating and printing average and SD for each metric for each class (remains the same in logic)
 def cal_all_metric(metrics, num):
     metric_names = ["Precision", "Sensitivity", "Jaccard", "Dice Score"]
-    if len(metrics) == 2: # For boundary metrics
+    # Determine NUM_CLASSES from the structure of the first metric's first element
+    # Assuming metrics[0] is a list of lists, and metrics[0][0] is a list of class values
+    NUM_CLASSES = len(metrics[0][0]) if metrics and isinstance(metrics[0], list) and metrics[0] else 0
+
+    if len(metrics) == 2: # For boundary metrics (these are not per-class)
         metric_names = ["Boundary Precision", "Boundary Recall"]
+        # Boundary metrics don't typically report per-class, so this section might be redundant for them.
+        # Keeping it for consistency with original structure, but it will iterate for 8 "classes" for boundary
+        # even if only a single value for boundary metrics is available per image.
+        # This part of the function could be refactored for clarity if boundary metrics are always aggregated.
 
     for c, metric in enumerate(metrics):
         if c < len(metric_names):
             print(f"\n{metric_names[c]} for all brain parts:")
         else:
             print(f"\nMetrics no. {c+1} for all brain parts:")
-        
-        for i in range(8): # Iterate through 8 classes
-            # Filter out lists that might contain single values if `all==0` was used for calc_met for some reason
-            class_metric_values = [m[i] for m in metric if isinstance(m, list) and len(m) > i] # Ensure 'm' is a list and has enough elements
-            if not class_metric_values: # Handle cases where a class might not have been present in any slice
-                print(f"Class {i}: No data")
-                continue
-            mean_value = round(np.mean(class_metric_values), 2)
-            std_value = round(np.std(class_metric_values), 2)
-            print(f"Class {i}: Mean={mean_value}, Std={std_value}")
+
+        # Loop through classes for per-class metrics, but only if NUM_CLASSES > 0
+        if NUM_CLASSES > 0 and len(metric_names) != 2: # Exclude boundary metrics from this loop
+            for i in range(NUM_CLASSES): # Iterate through determined NUM_CLASSES
+                # Filter out lists that might contain single values if `all==0` was used for calc_met for some reason
+                class_metric_values = [m[i] for m in metric if isinstance(m, list) and len(m) > i]
+                if not class_metric_values:
+                    print(f"Class {i}: No data")
+                    continue
+                mean_value = round(np.mean(class_metric_values), 2)
+                std_value = round(np.std(class_metric_values), 2)
+                print(f"Class {i}: Mean={mean_value}, Std={std_value}")
+        else: # For boundary metrics, or if NUM_CLASSES is 0 unexpectedly
+             # Assuming boundary metrics are single values per image, not per-class
+            if len(metric_names) == 2: # It's boundary metrics
+                # This loop essentially aggregates the single boundary metric values over images
+                mean_value = round(np.mean(metric), 2)
+                std_value = round(np.std(metric), 2)
+                print(f"Mean={mean_value}, Std={std_value}")
+            else:
+                print("No class-specific data to display.")
 
 
 # Main function for prediction, evaluation, and boundary metric calculation with Uncertainty
@@ -169,24 +208,29 @@ def pred_and_eval_with_uncertainty(model, X_test, y_test=[], num_mc_passes=50, d
         for _ in range(num_mc_passes):
             # Ensure model is called with training=True to activate dropout
             # The model is expecting (batch, H, W, C)
-            output_prob = model(current_input, training=True).numpy() # Raw probabilities from sigmoid
+            output_prob = model(current_input, training=True).numpy()
             mc_predictions_for_sample.append(output_prob)
-        
-        # Convert list of (1, H, W, 8) arrays to (num_passes, 1, H, W, 8)
+
+        # Convert list of (1, H, W, NUM_CLASSES) arrays to (num_passes, 1, H, W, NUM_CLASSES)
         mc_predictions_for_sample = np.array(mc_predictions_for_sample)
-        
-        # Squeeze the batch dimension (1) so it becomes (num_passes, H, W, 8)
+
+        # Squeeze the batch dimension (1) so it becomes (num_passes, H, W, NUM_CLASSES)
         mc_predictions_for_sample = np.squeeze(mc_predictions_for_sample, axis=1)
 
         # --- Calculate Average Prediction for Final Segmentation ---
-        avg_probabilities = np.mean(mc_predictions_for_sample, axis=0) # (H, W, 8)
+        avg_probabilities = np.mean(mc_predictions_for_sample, axis=0) # (H, W, NUM_CLASSES)
         # Get the final class prediction by argmax
         segmentation = np.argmax(avg_probabilities, axis=-1).astype(np.uint8)
         segmentation_list.append(segmentation)
 
         # --- Calculate Metrics if Ground Truth is Provided ---
         if current_actual is not None:
-            tp, fp, fn, _ = get_count(np.expand_dims(segmentation, axis=0), current_actual) # Pass seg as (1,H,W) to get_count
+            # Pass seg as (1,H,W) to get_count for consistent input shape handling
+            # get_count will handle argmax internally, but here we already have argmaxed segmentation
+            # We need to pass the raw probabilities to get_count or ensure get_count expects argmaxed input
+            # Given get_count's current logic, it expects probabilities (H,W,NUM_CLASSES) or (1,H,W,NUM_CLASSES)
+            # So, we should pass avg_probabilities, NOT the argmaxed 'segmentation' directly.
+            tp, fp, fn, _ = get_count(np.expand_dims(avg_probabilities, axis=0), current_actual)
 
             if all == 0:
                 prec, sens, jac, dice, acc = calc_met(tp, fp, fn, 256 * 256, all)
@@ -206,7 +250,7 @@ def pred_and_eval_with_uncertainty(model, X_test, y_test=[], num_mc_passes=50, d
 
         # --- Calculate Uncertainty Measures ---
         # Variance: Per-voxel, per-class variance of predicted probabilities
-        # Shape: (H, W, 8)
+        # Shape: (H, W, NUM_CLASSES)
         variance = np.var(mc_predictions_for_sample, axis=0)
         variance_list.append(variance)
 
@@ -244,28 +288,14 @@ def pred_and_eval_with_uncertainty(model, X_test, y_test=[], num_mc_passes=50, d
 
         elif all == 0: # Print average metrics across samples
             print('\n--- Average Metrics Across Test Samples ---')
+            # Pass individual lists of metric values for cal_avg_metric
             cal_avg_metric([prec_list, sens_list, jac_list, dice_list, acc_list])
             cal_avg_metric([boundary_prec_list, boundary_rec_list])
 
         elif all == 1: # Print metrics per class across samples
             print('\n--- Metrics Per Class Across Test Samples ---')
+            # Pass individual lists of metric values for cal_all_metric
             cal_all_metric([prec_list, sens_list, jac_list, dice_list], num_samples)
             cal_all_metric([boundary_prec_list, boundary_rec_list], num_samples)
 
     return results
-
-# You would typically call this function from your main training/testing script like:
-# from Models.create_dataset import create_dataset # Assuming this is how you get your data
-#
-# # 1. Load your test data (X_test, y_test)
-# # X_train, X_test, y_train, y_test = create_dataset(path_to_input_mri, path_to_output_mri, s=0.2)
-#
-# # 2. Create/Load your model (e.g., the ensemble model)
-# model = create_segmentation_model(dropout_rate=0.2) # Make sure you chose the correct import above!
-# # If you have pre-trained weights: model.load_weights('path/to/your/weights.h5')
-#
-# # 3. Run evaluation with uncertainty
-# mc_results = pred_and_eval_with_uncertainty(model, X_test, y_test, num_mc_passes=50, dropout_rate=0.2, all=0)
-#
-# # Now mc_results contains your segmentations, metrics, and uncertainty maps
-# # You can then pass mc_results['entropies'] and mc_results['variances'] to your visualization functions.
