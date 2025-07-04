@@ -45,13 +45,14 @@ def create_model(dropout_rate=0.2, num_classes=8): # <--- CHANGED DEFAULT from 7
 
     # Attention on the combined output
     conc1 = channel_attention(conc1)
-
+    
     # Further refinement with convolution layers
-    conv2 = layers.Conv2D(16, 3, activation='relu', padding='same')(conc1)
-    conv2 = layers.Conv2D(16, 3, activation='relu', padding='same')(conv2)
+    # Give this layer a name so we can access it later for Grad-CAM
+    conv2_for_gradcam = layers.Conv2D(16, 3, activation='relu', padding='same', name='gradcam_target_conv')(conc1)
+    conv2_output = layers.Conv2D(16, 3, activation='relu', padding='same')(conv2_for_gradcam) # This layer takes input from the named layer
 
-    # Final output layer - MODIFIED TO SOFTMAX AND CORRECT NUM_CLASSES FILTERS
-    outp1 = layers.Conv2D(num_classes, 1, activation='softmax', padding='same')(conv2)
+    # Final output layer
+    outp1 = layers.Conv2D(num_classes, 1, activation='softmax', padding='same')(conv2_output)
 
     # Create the final model
     model = models.Model(inputs=inp, outputs=outp1)
