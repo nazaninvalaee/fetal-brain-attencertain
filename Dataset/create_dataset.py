@@ -91,6 +91,7 @@ def prepare_filepaths(path1, path2, n=40):
 def data_generator(filepaths_list, slices_per_volume=None):
     """
     A Python generator that yields preprocessed 2D slices from 3D NIfTI volumes.
+    tqdm is *removed* from this generator because it runs in a TensorFlow graph context.
 
     Args:
         filepaths_list (list): A list of (input_nii_path, output_nii_path) tuples.
@@ -103,20 +104,13 @@ def data_generator(filepaths_list, slices_per_volume=None):
     Yields:
         tuple: (preprocessed_image_slice, preprocessed_label_slice)
     """
-    # Check if TensorFlow is in graph-building mode (autograph/tracing)
-    # If it is, disable tqdm to prevent jumbled output from parallel ops
-    if tf.config.functions.get_autograph_options().status == 'DISABLED' or tf.executing_eagerly():
-        # If eager execution is on, or autograph is explicitly disabled, tqdm can run
-        use_tqdm = True
-    else:
-        # If in graph mode (e.g., during tf.data.Dataset.from_generator tracing), disable tqdm
-        use_tqdm = False
+    # IMPORTANT: Do NOT use tqdm directly within this generator function
+    # when it's passed to tf.data.Dataset.from_generator().
+    # TensorFlow runs this in a graph context, often with multiple workers,
+    # which leads to jumbled tqdm output and potential errors.
+    # The progress during training/validation will be shown by Keras's own progress bar.
 
-    # Conditionally wrap filepaths_list with tqdm
-    iterable_filepaths = tqdm(filepaths_list, desc="Loading Volumes & Slices", ncols=75) if use_tqdm else filepaths_list
-
-
-    for img_path, label_path in iterable_filepaths: # Use the conditionally wrapped iterable
+    for img_path, label_path in filepaths_list: # Removed tqdm wrapper here
         try:
             # Load 3D volumes
             img_volume = nib.load(img_path).get_fdata()
