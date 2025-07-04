@@ -24,13 +24,12 @@ def channel_attention(input_feature, ratio=8):
     return cbam_feature
 
 # Ensemble model - MODIFIED TO ACCEPT NUM_CLASSES
-def create_model(dropout_rate=0.2, num_classes=7): # Added num_classes parameter here, default to 7
+def create_model(dropout_rate=0.2, num_classes=8): # <--- CHANGED DEFAULT from 7 to 8
     # Load both models, passing the dropout_rate
     # IMPORTANT: Also ensure layer_4_mod.py and layer_4_no_mod.py
     # are NOT outputting a softmax/sigmoid themselves.
     # They should output raw features/logits if they are part of a larger ensemble's final classification.
     # If their create_model functions accept a final_activation parameter, it should be None or linear.
-    # We will check these next.
     model1 = layer_4_mod.create_model(ensem=1, dropout_rate=dropout_rate)
     model2 = layer_4_no_mod.create_model(ensem=1, dropout_rate=dropout_rate)
 
