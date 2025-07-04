@@ -103,7 +103,20 @@ def data_generator(filepaths_list, slices_per_volume=None):
     Yields:
         tuple: (preprocessed_image_slice, preprocessed_label_slice)
     """
-    for img_path, label_path in tqdm(filepaths_list, desc="Loading Volumes & Slices", ncols=75):
+    # Check if TensorFlow is in graph-building mode (autograph/tracing)
+    # If it is, disable tqdm to prevent jumbled output from parallel ops
+    if tf.config.functions.get_autograph_options().status == 'DISABLED' or tf.executing_eagerly():
+        # If eager execution is on, or autograph is explicitly disabled, tqdm can run
+        use_tqdm = True
+    else:
+        # If in graph mode (e.g., during tf.data.Dataset.from_generator tracing), disable tqdm
+        use_tqdm = False
+
+    # Conditionally wrap filepaths_list with tqdm
+    iterable_filepaths = tqdm(filepaths_list, desc="Loading Volumes & Slices", ncols=75) if use_tqdm else filepaths_list
+
+
+    for img_path, label_path in iterable_filepaths: # Use the conditionally wrapped iterable
         try:
             # Load 3D volumes
             img_volume = nib.load(img_path).get_fdata()
@@ -118,7 +131,7 @@ def data_generator(filepaths_list, slices_per_volume=None):
 
             for axis in axes:
                 slice_shape = img_volume.shape[axis]
-                
+
                 # Determine slices to extract
                 if slices_per_volume is not None and slices_per_volume > 0:
                     # Select slices evenly, ensuring at least one slice
@@ -201,6 +214,7 @@ def count_slices_in_filepaths(filepaths_list, slices_per_volume=None):
     for a given list of file paths. This involves loading each 3D volume
     to get its shape.
     """
+    # This tqdm is fine because it's run *before* the tf.data.Dataset is built.
     total_slices = 0
     for img_path, _ in tqdm(filepaths_list, desc="Counting Slices", ncols=75, leave=False):
         try:
@@ -233,7 +247,7 @@ def create_dataset(path1, path2, n=40, s=0.05):
         path2 (str): Path to the folder containing 3D output segmentation masks (.nii.gz).
         n (int): Number of volumes to consider from the dataset.
         s (float): Split ratio for test set (e.g., 0.1 for 10% test, 90% train).
-                   If s=0, all data is used for training (no test set returned).
+                     If s=0, all data is used for training (no test set returned).
 
     Returns:
         tuple: (train_filepaths, test_filepaths) where each is a list of
