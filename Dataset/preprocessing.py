@@ -70,17 +70,19 @@ def flip(d1, d2, i):
         return cv.flip(d1, i), cv.flip(d2, i)  
 
 # Blurring the images to account for fetal movement artifacts
-def blur(x, i):
-    if i == 0:  
-        return x
-    else:  
+def blur(x_img, strength=1): # Renamed 'i' to 'strength' to indicate it controls if blur happens
+    if strength == 0: # No blur
+        return x_img
+    else:
         f = np.random.randint(3)
+        # Squeeze to (H, W), blur, then re-expand
         if f == 0:
-            return cv.GaussianBlur(x, (11, 11), 0)  
+            blurred_img = cv.GaussianBlur(x_img.squeeze(), (11, 11), 0)
         elif f == 1:
-            return cv.GaussianBlur(x, (15, 1), 0)  
+            blurred_img = cv.GaussianBlur(x_img.squeeze(), (15, 1), 0)
         else:
-            return cv.GaussianBlur(x, (1, 15), 0)  
+            blurred_img = cv.GaussianBlur(x_img.squeeze(), (1, 15), 0)
+        return np.expand_dims(blurred_img, axis=-1)
 
 # Edge detection to enhance segmentation labels for edge-aware loss function
 def detect_edges(label):
