@@ -35,8 +35,11 @@ def sensitivity(tp, fn):  # same as recall
 
 # Accuracy for checking the performance of the model
 def accuracy(tp, total):
-    total_tp = np.sum(tp)
-    return round(total_tp / total, 2)
+    total_tp = np.sum(tp) # Assumes 'tp' is either a single scalar or an array that needs summing
+    if total == 0:
+        return 1.0 # Convention: if no pixels, accuracy is 1.0. Prevents division by zero.
+    else:
+        return round(total_tp / total, 2)
 
 # Boundary Precision: How well the model detects edges compared to ground truth
 def boundary_precision(pred_mask, true_mask):
