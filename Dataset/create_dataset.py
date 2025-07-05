@@ -115,7 +115,7 @@ def data_generator(filepaths_list, slices_per_volume=None):
                         d1_slice, d2_slice = img_volume[:, :, j], label_volume[:, :, j]
 
                     # DEBUGGING: Re-enabled this line to verify slice content at source
-                    print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
+                    # print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
 
                     preprocessed_img, preprocessed_label = preprocess_slice(d1_slice, d2_slice)
 
