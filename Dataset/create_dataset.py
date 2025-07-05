@@ -11,36 +11,35 @@ from skimage.transform import resize
 import tensorflow as tf # For tf.data.Dataset
 
 # --- Helper function to preprocess a single slice ---
+# --- Helper function to preprocess a single slice ---
 def preprocess_slice(img_slice_2d, label_slice_2d):
     """
     Applies resizing, normalization, and adds channel dimension to a single 2D slice.
-
-    Args:
-        img_slice_2d (np.ndarray): A 2D numpy array for the image slice.
-        label_slice_2d (np.ndarray): A 2D numpy array for the label slice.
-
-    Returns:
-        tuple: (preprocessed_image, preprocessed_label)
     """
-    # Ensure all images are the same shape (256x256)
-    # preserve_range=True for image to maintain intensity scale for normalization later
-    # order=0 for label (nearest-neighbor) to maintain integer class labels
+    # Debugging: Check input to preprocess_slice
+    # print(f"DEBUG_PREPROCESS: Input img_slice_2d stats - Min: {np.min(img_slice_2d):.2f}, Max: {np.max(img_slice_2d):.2f}, Mean: {np.mean(img_slice_2d):.2f}")
+    # print(f"DEBUG_PREPROCESS: Input label_slice_2d unique - {np.unique(label_slice_2d)}")
+
+
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
 
-    # Normalize input image to 0-1 range (standard for neural networks)
-    # Check if max value is 0 to avoid division by zero
+    # Debugging: Check after resize
+    # print(f"DEBUG_PREPROCESS: After resize img_resized stats - Min: {np.min(img_resized):.2f}, Max: {np.max(img_resized):.2f}, Mean: {np.mean(img_resized):.2f}")
+    # print(f"DEBUG_PREPROCESS: After resize label_resized unique - {np.unique(label_resized)}")
+
     max_val = np.max(img_resized)
     if max_val > 0:
-        img_normalized = img_resized.astype(np.float32) / max_val # Using float32 for model input
+        img_normalized = img_resized.astype(np.float32) / max_val
     else:
         img_normalized = img_resized.astype(np.float32) # Keep as float even if all zeros
 
-    # Add channel dimension (H, W, 1) for the image
     img_final = np.expand_dims(img_normalized, axis=-1)
-
-    # Ensure label data type is correct for SparseCategoricalCrossentropy (uint8 for integer labels)
     label_final = label_resized.astype(np.uint8)
+
+    # Debugging: Check final output of preprocess_slice
+    # print(f"DEBUG_PREPROCESS: Output img_final stats - Min: {np.min(img_final):.4f}, Max: {np.max(img_final):.4f}, Mean: {np.mean(img_final):.4f}")
+    # print(f"DEBUG_PREPROCESS: Output label_final unique - {np.unique(label_final)}")
 
     return img_final, label_final
 
@@ -107,49 +106,31 @@ def prepare_filepaths(path1, path2, n=40):
 def data_generator(filepaths_list, slices_per_volume=None):
     """
     A Python generator that yields preprocessed 2D slices from 3D NIfTI volumes.
-    tqdm is *removed* from this generator because it runs in a TensorFlow graph context.
-
-    Args:
-        filepaths_list (list): A list of (input_nii_path, output_nii_path) tuples.
-        slices_per_volume (int or None): If an integer, samples this many slices
-                                         evenly from each volume along all three axes.
-                                         If None, takes all slices. This can help
-                                         further reduce memory if slicing every single
-                                         slice is still too much.
-
-    Yields:
-        tuple: (preprocessed_image_slice, preprocessed_label_slice)
     """
-    # IMPORTANT: Do NOT use tqdm directly within this generator function
-    # when it's passed to tf.data.Dataset.from_generator().
-    # TensorFlow runs this in a graph context, often with multiple workers,
-    # which leads to jumbled tqdm output and potential errors.
-    # The progress during training/validation will be shown by Keras's own progress bar.
-
-    for img_path, label_path in filepaths_list: # Removed tqdm wrapper here
+    for img_path, label_path in filepaths_list:
         try:
-            # Load 3D volumes
             img_volume = nib.load(img_path).get_fdata()
             label_volume = nib.load(label_path).get_fdata()
 
-            # Ensure data types are suitable to reduce memory footprint early
+            # Debugging: Check raw volume stats right after loading in generator
+            # print(f"\nDEBUG_GENERATOR: Loaded {os.path.basename(img_path)} - Min: {np.min(img_volume):.2f}, Max: {np.max(img_volume):.2f}")
+            # print(f"DEBUG_GENERATOR: Loaded {os.path.basename(label_path)} - Unique: {np.unique(label_volume)}")
+
+
             img_volume = img_volume.astype(np.float32)
             label_volume = label_volume.astype(np.uint8)
 
-            # Define axes and how to slice them
             axes = [0, 1, 2] # Saggital, Coronal, Axial
 
             for axis in axes:
                 slice_shape = img_volume.shape[axis]
-
-                # Determine slices to extract
                 if slices_per_volume is not None and slices_per_volume > 0:
-                    # Select slices evenly, ensuring at least one slice
                     selected_slice_indices = np.linspace(0, slice_shape - 1, slices_per_volume, dtype=int)
                 else:
-                    selected_slice_indices = range(slice_shape) # Take all slices
+                    selected_slice_indices = range(slice_shape)
 
                 for j in selected_slice_indices:
+                    # Slicing logic
                     if axis == 0:
                         d1_slice, d2_slice = img_volume[j, :, :], label_volume[j, :, :]
                     elif axis == 1:
@@ -157,30 +138,21 @@ def data_generator(filepaths_list, slices_per_volume=None):
                     else: # axis == 2
                         d1_slice, d2_slice = img_volume[:, :, j], label_volume[:, :, j]
 
-                    # Preprocess the 2D slice
+                    # Debugging: Check slice stats before preprocessing
+                    # print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
+
+
                     preprocessed_img, preprocessed_label = preprocess_slice(d1_slice, d2_slice)
 
-                    # --- Apply optional augmentations (flip, blur) here if desired ---
-                    # Ensure your 'flip' and 'blur' functions from Dataset.preprocessing
-                    # are designed to work on (H, W, 1) image and (H, W) label.
-                    # This should be done on the preprocessed slices before yielding.
-                    # For example:
-                    # if np.random.rand() < 0.5: # 50% chance to flip
-                    #     preprocessed_img, preprocessed_label = flip(preprocessed_img, preprocessed_label)
-                    # if np.random.rand() < 0.3: # 30% chance to blur
-                    #     preprocessed_img = blur(preprocessed_img)
-                    # -----------------------------------------------------------------
-
+                    # Yield the preprocessed slices
                     yield preprocessed_img, preprocessed_label
 
-            # Explicitly delete volumes after processing all their slices
             del img_volume, label_volume
-            gc.collect() # Force garbage collection
+            gc.collect()
 
         except Exception as e:
             print(f"Error processing volume pair: {img_path} and {label_path}: {e}")
-            continue # Skip to the next volume
-
+            continue
 
 # --- Function to create TensorFlow Datasets from generators ---
 def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True):
