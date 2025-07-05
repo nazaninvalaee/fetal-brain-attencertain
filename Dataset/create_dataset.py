@@ -44,7 +44,6 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
 
     return img_final, label_final
 
-# --- This function now only handles file paths, not image data ---
 # --- This function now correctly filters and matches file paths ---
 def prepare_filepaths(path1, path2, n=40):
     """
