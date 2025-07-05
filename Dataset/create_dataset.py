@@ -17,16 +17,16 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     Applies resizing, normalization, and adds channel dimension to a single 2D slice.
     """
     # Debugging: Check input to preprocess_slice
-    # print(f"DEBUG_PREPROCESS: Input img_slice_2d stats - Min: {np.min(img_slice_2d):.2f}, Max: {np.max(img_slice_2d):.2f}, Mean: {np.mean(img_slice_2d):.2f}")
-    # print(f"DEBUG_PREPROCESS: Input label_slice_2d unique - {np.unique(label_slice_2d)}")
+    print(f"DEBUG_PREPROCESS: Input img_slice_2d stats - Min: {np.min(img_slice_2d):.2f}, Max: {np.max(img_slice_2d):.2f}, Mean: {np.mean(img_slice_2d):.2f}")
+    print(f"DEBUG_PREPROCESS: Input label_slice_2d unique - {np.unique(label_slice_2d)}")
 
 
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
 
     # Debugging: Check after resize
-    # print(f"DEBUG_PREPROCESS: After resize img_resized stats - Min: {np.min(img_resized):.2f}, Max: {np.max(img_resized):.2f}, Mean: {np.mean(img_resized):.2f}")
-    # print(f"DEBUG_PREPROCESS: After resize label_resized unique - {np.unique(label_resized)}")
+    print(f"DEBUG_PREPROCESS: After resize img_resized stats - Min: {np.min(img_resized):.2f}, Max: {np.max(img_resized):.2f}, Mean: {np.mean(img_resized):.2f}")
+    print(f"DEBUG_PREPROCESS: After resize label_resized unique - {np.unique(label_resized)}")
 
     max_val = np.max(img_resized)
     if max_val > 0:
@@ -38,8 +38,8 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     label_final = label_resized.astype(np.uint8)
 
     # Debugging: Check final output of preprocess_slice
-    # print(f"DEBUG_PREPROCESS: Output img_final stats - Min: {np.min(img_final):.4f}, Max: {np.max(img_final):.4f}, Mean: {np.mean(img_final):.4f}")
-    # print(f"DEBUG_PREPROCESS: Output label_final unique - {np.unique(label_final)}")
+    print(f"DEBUG_PREPROCESS: Output img_final stats - Min: {np.min(img_final):.4f}, Max: {np.max(img_final):.4f}, Mean: {np.mean(img_final):.4f}")
+    print(f"DEBUG_PREPROCESS: Output label_final unique - {np.unique(label_final)}")
 
     return img_final, label_final
 
@@ -113,8 +113,8 @@ def data_generator(filepaths_list, slices_per_volume=None):
             label_volume = nib.load(label_path).get_fdata()
 
             # Debugging: Check raw volume stats right after loading in generator
-            # print(f"\nDEBUG_GENERATOR: Loaded {os.path.basename(img_path)} - Min: {np.min(img_volume):.2f}, Max: {np.max(img_volume):.2f}")
-            # print(f"DEBUG_GENERATOR: Loaded {os.path.basename(label_path)} - Unique: {np.unique(label_volume)}")
+            print(f"\nDEBUG_GENERATOR: Loaded {os.path.basename(img_path)} - Min: {np.min(img_volume):.2f}, Max: {np.max(img_volume):.2f}")
+            print(f"DEBUG_GENERATOR: Loaded {os.path.basename(label_path)} - Unique: {np.unique(label_volume)}")
 
 
             img_volume = img_volume.astype(np.float32)
@@ -139,7 +139,7 @@ def data_generator(filepaths_list, slices_per_volume=None):
                         d1_slice, d2_slice = img_volume[:, :, j], label_volume[:, :, j]
 
                     # Debugging: Check slice stats before preprocessing
-                    # print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
+                    print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
 
 
                     preprocessed_img, preprocessed_label = preprocess_slice(d1_slice, d2_slice)
