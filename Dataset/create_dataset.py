@@ -11,22 +11,12 @@ from skimage.transform import resize
 import tensorflow as tf # For tf.data.Dataset
 
 # --- Helper function to preprocess a single slice ---
-# --- Helper function to preprocess a single slice ---
 def preprocess_slice(img_slice_2d, label_slice_2d):
     """
-    Applies resizing, normalization, and adds channel dimension to a single 2D slice.
+    Splies resizing, normalization, and adds channel dimension to a single 2D slice.
     """
-    # Debugging: Check input to preprocess_slice
-    print(f"DEBUG_PREPROCESS: Input img_slice_2d stats - Min: {np.min(img_slice_2d):.2f}, Max: {np.max(img_slice_2d):.2f}, Mean: {np.mean(img_slice_2d):.2f}")
-    print(f"DEBUG_PREPROCESS: Input label_slice_2d unique - {np.unique(label_slice_2d)}")
-
-
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
-
-    # Debugging: Check after resize
-    print(f"DEBUG_PREPROCESS: After resize img_resized stats - Min: {np.min(img_resized):.2f}, Max: {np.max(img_resized):.2f}, Mean: {np.mean(img_resized):.2f}")
-    print(f"DEBUG_PREPROCESS: After resize label_resized unique - {np.unique(label_resized)}")
 
     max_val = np.max(img_resized)
     if max_val > 0:
@@ -36,10 +26,6 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
 
     img_final = np.expand_dims(img_normalized, axis=-1)
     label_final = label_resized.astype(np.uint8)
-
-    # Debugging: Check final output of preprocess_slice
-    print(f"DEBUG_PREPROCESS: Output img_final stats - Min: {np.min(img_final):.4f}, Max: {np.max(img_final):.4f}, Mean: {np.mean(img_final):.4f}")
-    print(f"DEBUG_PREPROCESS: Output label_final unique - {np.unique(label_final)}")
 
     return img_final, label_final
 
@@ -112,11 +98,6 @@ def data_generator(filepaths_list, slices_per_volume=None):
             img_volume = nib.load(img_path).get_fdata()
             label_volume = nib.load(label_path).get_fdata()
 
-            # Debugging: Check raw volume stats right after loading in generator
-            print(f"\nDEBUG_GENERATOR: Loaded {os.path.basename(img_path)} - Min: {np.min(img_volume):.2f}, Max: {np.max(img_volume):.2f}")
-            print(f"DEBUG_GENERATOR: Loaded {os.path.basename(label_path)} - Unique: {np.unique(label_volume)}")
-
-
             img_volume = img_volume.astype(np.float32)
             label_volume = label_volume.astype(np.uint8)
 
@@ -137,10 +118,6 @@ def data_generator(filepaths_list, slices_per_volume=None):
                         d1_slice, d2_slice = img_volume[:, j, :], label_volume[:, j, :]
                     else: # axis == 2
                         d1_slice, d2_slice = img_volume[:, :, j], label_volume[:, :, j]
-
-                    # Debugging: Check slice stats before preprocessing
-                    print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
-
 
                     preprocessed_img, preprocessed_label = preprocess_slice(d1_slice, d2_slice)
 
@@ -170,7 +147,7 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_t
     """
     output_signature = (
         tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image
-        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)      # Label
+        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)       # Label
     )
 
     dataset = tf.data.Dataset.from_generator(
@@ -229,12 +206,12 @@ def create_dataset(path1, path2, n=40, s=0.05):
         path2 (str): Path to the folder containing 3D output segmentation masks (.nii.gz).
         n (int): Number of volumes to consider from the dataset.
         s (float): Split ratio for test set (e.g., 0.1 for 10% test, 90% train).
-                     If s=0, all data is used for training (no test set returned).
+                    If s=0, all data is used for training (no test set returned).
 
     Returns:
         tuple: (train_filepaths, test_filepaths) where each is a list of
-               (input_nii_path, output_nii_path) tuples.
-               If s=0, returns (all_filepaths, None).
+                (input_nii_path, output_nii_path) tuples.
+                If s=0, returns (all_filepaths, None).
     """
     all_filepaths = prepare_filepaths(path1, path2, n)
 
