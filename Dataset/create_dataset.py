@@ -13,7 +13,7 @@ import tensorflow as tf # For tf.data.Dataset
 # --- Helper function to preprocess a single slice ---
 def preprocess_slice(img_slice_2d, label_slice_2d):
     """
-    Splies resizing, normalization, and adds channel dimension to a single 2D slice.
+    Applies resizing, normalization, and adds channel dimension to a single 2D slice.
     """
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
@@ -59,11 +59,6 @@ def prepare_filepaths(path1, path2, n=40):
             # Extract base name like 'sub-040_rec-mial'
             base_name = f.replace('_dseg.nii.gz', '')
             output_label_map[base_name] = os.path.join(path2, f)
-        # If you wanted to use _ddseg.nii.gz as the label, you'd add:
-        # elif f.endswith('_ddseg.nii.gz'):
-        #     base_name = f.replace('_ddseg.nii.gz', '')
-        #     output_label_map[base_name] = os.path.join(path2, f)
-
 
     matched_filepaths = []
     # Limit to 'n' volumes from the filtered input images
@@ -119,6 +114,9 @@ def data_generator(filepaths_list, slices_per_volume=None):
                     else: # axis == 2
                         d1_slice, d2_slice = img_volume[:, :, j], label_volume[:, :, j]
 
+                    # DEBUGGING: Re-enabled this line to verify slice content at source
+                    print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
+
                     preprocessed_img, preprocessed_label = preprocess_slice(d1_slice, d2_slice)
 
                     # Yield the preprocessed slices
@@ -132,7 +130,7 @@ def data_generator(filepaths_list, slices_per_volume=None):
             continue
 
 # --- Function to create TensorFlow Datasets from generators ---
-def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True):
+def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True, slices_per_volume=None):
     """
     Creates a TensorFlow Dataset from the data generator.
 
@@ -141,6 +139,8 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_t
         batch_size (int): Batch size for the dataset.
         shuffle_buffer_size (int): Size of the buffer for shuffling elements.
         is_training (bool): If True, apply .repeat() and larger shuffle buffer.
+        slices_per_volume (int, optional): Number of slices to sample per 3D volume per axis.
+                                            Passed to data_generator.
 
     Returns:
         tf.data.Dataset: A TensorFlow dataset that yields batches of (image, label).
@@ -151,7 +151,7 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_t
     )
 
     dataset = tf.data.Dataset.from_generator(
-        lambda: data_generator(filepaths_list), # Wrap generator call in a lambda
+        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume), # Pass slices_per_volume here!
         output_signature=output_signature
     )
 
