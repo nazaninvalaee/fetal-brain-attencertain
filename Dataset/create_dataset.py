@@ -16,6 +16,7 @@ import numpy as np
 from skimage.transform import resize # Ensure this is imported
 
 def preprocess_slice(img_slice_2d, label_slice_2d):
+    # Debug prints (keep them for now)
     print(f"DEBUG: label_slice_2d initial shape: {label_slice_2d.shape}")
 
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
@@ -26,15 +27,20 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     if max_val > 0:
         img_normalized = img_resized.astype(np.float32) / max_val
     else:
-        img_normalized = img_resized.astype(np.float32) # Keep as float even if all zeros
+        img_normalized = img_resized.astype(np.float32)
 
-    img_final = np.expand_dims(img_normalized, axis=-1)
+    img_final = np.expand_dims(img_normalized, axis=-1) # Image is (256, 256, 1)
     
-    label_final = np.squeeze(label_resized)
-    print(f"DEBUG: label_final shape AFTER SQUEEZE: {label_final.shape}") # <-- CRITICAL DEBUG LINE
+    label_processed = np.squeeze(label_resized) # Ensure it's (256, 256) first by removing all singleton dimensions
+    print(f"DEBUG: label_processed shape AFTER SQUEEZE: {label_processed.shape}")
     
-    label_final = label_final.astype(np.uint8) # Cast to uint8 after squeezing
-    print(f"DEBUG: label_final shape AFTER CAST: {label_final.shape}")
+    # --- NEW ADDITION FOR LABEL CHANNEL DIMENSION ---
+    # Explicitly add a channel dimension of 1 to the label
+    label_final = np.expand_dims(label_processed, axis=-1) # This will make it (256, 256, 1)
+    # --- END NEW ADDITION ---
+
+    label_final = label_final.astype(np.uint8) # Cast after all shape manipulations
+    print(f"DEBUG: label_final shape AFTER EXPAND_DIMS AND CAST: {label_final.shape}") # Verify this is (256, 256, 1)
 
     return img_final, label_final
 
@@ -151,8 +157,8 @@ def data_generator(filepaths_list, slices_per_volume=None, apply_augmentation=Fa
 # --- Function to create TensorFlow Datasets from generators ---
 def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True, slices_per_volume=None):
     output_signature = (
-        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image
-        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)       # Label: This must be (256, 256)
+        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image (unchanged)
+        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.uint8)    # Label: NOW EXPECT (256, 256, 1)
     )
 
     dataset = tf.data.Dataset.from_generator(
