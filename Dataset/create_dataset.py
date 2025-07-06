@@ -6,9 +6,13 @@ from tqdm import tqdm
 import gc # Import garbage collection for explicit memory management
 
 from sklearn.model_selection import train_test_split
-from Dataset.preprocessing import reduce_2d, flip, blur # Assuming these are compatible with 2D slices
+# Import all preprocessing and augmentation functions
+from Dataset.preprocessing import reduce_2d, flip, blur, \
+                                  random_brightness_contrast, random_gamma_correction, \
+                                  random_affine_transform, elastic_transform
 from skimage.transform import resize
 import tensorflow as tf # For tf.data.Dataset
+import random # For random choices in augmentation application
 
 # --- Helper function to preprocess a single slice ---
 def preprocess_slice(img_slice_2d, label_slice_2d):
@@ -84,9 +88,10 @@ def prepare_filepaths(path1, path2, n=40):
 
 
 # --- Data Generator Function ---
-def data_generator(filepaths_list, slices_per_volume=None):
+def data_generator(filepaths_list, slices_per_volume=None, apply_augmentation=False):
     """
     A Python generator that yields preprocessed 2D slices from 3D NIfTI volumes.
+    Optionally applies data augmentation.
     """
     for img_path, label_path in filepaths_list:
         try:
@@ -114,13 +119,34 @@ def data_generator(filepaths_list, slices_per_volume=None):
                     else: # axis == 2
                         d1_slice, d2_slice = img_volume[:, :, j], label_volume[:, :, j]
 
-                    # DEBUGGING: Re-enabled this line to verify slice content at source
-                    # print(f"DEBUG_GENERATOR: Slice (axis={axis}, idx={j}) from {os.path.basename(img_path)} - Img Min: {np.min(d1_slice):.2f}, Max: {np.max(d1_slice):.2f}, Lbl Unique: {np.unique(d2_slice)}")
+                    # Preprocess first (resize, normalize, expand_dims)
+                    current_img, current_label = preprocess_slice(d1_slice, d2_slice)
 
-                    preprocessed_img, preprocessed_label = preprocess_slice(d1_slice, d2_slice)
+                    # --- Apply Data Augmentation (if enabled and for training) ---
+                    if apply_augmentation:
+                        # Randomly apply augmentations with a certain probability
+                        # Order: Intensity -> Geometric -> Blur (as per best practices)
 
-                    # Yield the preprocessed slices
-                    yield preprocessed_img, preprocessed_label
+                        # 1. Intensity Augmentations (apply only to image)
+                        if random.random() < 0.5: # 50% chance for brightness/contrast
+                            current_img = random_brightness_contrast(current_img)
+                        if random.random() < 0.5: # 50% chance for gamma correction
+                            current_img = random_gamma_correction(current_img)
+
+                        # 2. Geometric Augmentations (apply to both image and label)
+                        if random.random() < 0.5: # 50% chance for random affine transform (rotation + translation)
+                            current_img, current_label = random_affine_transform(current_img, current_label)
+                        if random.random() < 0.2: # 20% chance for elastic deformation (can be computationally heavier)
+                            current_img, current_label = elastic_transform(current_img, current_label)
+                        if random.random() < 0.5: # 50% chance for random flip
+                            flip_code = random.choice([0, 1, -1]) # 0: vertical, 1: horizontal, -1: both
+                            current_img, current_label = flip(current_img, current_label, flip_code)
+
+                        # 3. Blur (apply only to image)
+                        if random.random() < 0.5: # 50% chance for blur
+                           current_img = blur(current_img, apply_blur=True) # blur function already has internal randomness for kernel size
+
+                    yield current_img, current_label
 
             del img_volume, label_volume
             gc.collect()
@@ -138,7 +164,7 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_t
         filepaths_list (list): List of (input_nii_path, output_nii_path) tuples.
         batch_size (int): Batch size for the dataset.
         shuffle_buffer_size (int): Size of the buffer for shuffling elements.
-        is_training (bool): If True, apply .repeat() and larger shuffle buffer.
+        is_training (bool): If True, apply .repeat() and larger shuffle buffer, and enable augmentations.
         slices_per_volume (int, optional): Number of slices to sample per 3D volume per axis.
                                             Passed to data_generator.
 
@@ -151,14 +177,14 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_t
     )
 
     dataset = tf.data.Dataset.from_generator(
-        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume), # Pass slices_per_volume here!
+        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume, apply_augmentation=is_training), # Pass apply_augmentation based on is_training
         output_signature=output_signature
     )
 
     if is_training:
         dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
         dataset = dataset.batch(batch_size)
-        dataset = dataset.repeat() # *** IMPORTANT: Add .repeat() for training dataset ***
+        dataset = dataset.repeat() # Important for training dataset
         dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
     else:
         # For validation/test, typically you don't repeat, and shuffle might not be needed
@@ -206,12 +232,12 @@ def create_dataset(path1, path2, n=40, s=0.05):
         path2 (str): Path to the folder containing 3D output segmentation masks (.nii.gz).
         n (int): Number of volumes to consider from the dataset.
         s (float): Split ratio for test set (e.g., 0.1 for 10% test, 90% train).
-                    If s=0, all data is used for training (no test set returned).
+                   If s=0, all data is used for training (no test set returned).
 
     Returns:
         tuple: (train_filepaths, test_filepaths) where each is a list of
-                (input_nii_path, output_nii_path) tuples.
-                If s=0, returns (all_filepaths, None).
+               (input_nii_path, output_nii_path) tuples.
+               If s=0, returns (all_filepaths, None).
     """
     all_filepaths = prepare_filepaths(path1, path2, n)
 
