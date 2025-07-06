@@ -2,6 +2,9 @@ import numpy as np
 import cv2 as cv
 from scipy.ndimage import map_coordinates, gaussian_filter
 
+# Function to remove black slices (all 0s) along a particular axis
+# Note: This function is designed for 3D volumes.
+# It is currently not used in the slice-by-slice data_generator in create_dataset.py
 def reduce_2d(data1, data2, n):
     i = 0
     c = 0
@@ -184,8 +187,7 @@ def random_affine_transform(img, label, max_translation_pixels=10, max_rotation_
     M[1, 2] += ty
 
     transformed_img = cv.warpAffine(img.squeeze(), M, (cols, rows), flags=cv.INTER_LINEAR, borderMode=cv.BORDER_REFLECT_101)
-    transformed_label = cv.warpAffine(label, M, (cols, rows), flags=cv.INTER_NEAREST, borderMode=cv.BORDER_CONSTANT, borderValue=0) # Labels use INTER_NEAREST for preserving class IDs, background 0
-
+    transformed_label = cv.warpAffine(label, M, (cols, rows), flags=cv.INTER_NEAREST, borderMode=cv.BORDER_CONSTANT, borderValue=0)
     return np.expand_dims(transformed_img, axis=-1), transformed_label
 
 # NEW: Elastic Deformation
@@ -217,23 +219,6 @@ def elastic_transform(image, label, alpha=34, sigma=4, random_state=None):
 
     # Apply transformation using map_coordinates
     transformed_image = map_coordinates(image.squeeze(), indices, order=1, mode='reflect').reshape(shape)
-    transformed_label = map_coordinates(label, indices, order=0, mode='constant', cval=0).reshape(shape) # Label uses order 0 (nearest neighbor) to preserve class IDs, with 0 for out-of-bounds
+    transformed_label = map_coordinates(label, indices, order=0, mode='constant', cval=0).reshape(shape)
 
     return np.expand_dims(transformed_image, axis=-1), transformed_label
-
-# Edge detection to enhance segmentation labels for edge-aware loss function
-# Note: This function is an independent utility and is not currently integrated
-# into the model's training or direct output pipeline.
-def detect_edges(label):
-    """
-    Detects edges in a 2D label mask using Canny edge detection.
-
-    Args:
-        label (np.ndarray): The 2D label mask (H, W), expected to be uint8.
-
-    Returns:
-        np.ndarray: A 2D numpy array with detected edges (binary mask).
-    """
-    # Use the Canny edge detection
-    edges = cv.Canny(label.astype(np.uint8), threshold1=100, threshold2=200)
-    return edges
