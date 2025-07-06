@@ -3,22 +3,16 @@ import os
 import nibabel as nib
 import time
 from tqdm import tqdm
-import gc # Import garbage collection for explicit memory management
-
+import gc
 from sklearn.model_selection import train_test_split
-# Import all preprocessing and augmentation functions
 from Dataset.preprocessing import reduce_2d, flip, blur, \
                                   random_brightness_contrast, random_gamma_correction, \
                                   random_affine_transform, elastic_transform
 from skimage.transform import resize
-import tensorflow as tf # For tf.data.Dataset
-import random # For random choices in augmentation application
+import tensorflow as tf
+import random
 
-# --- Helper function to preprocess a single slice ---
 def preprocess_slice(img_slice_2d, label_slice_2d):
-    """
-    Applies resizing, normalization, and adds channel dimension to a single 2D slice.
-    """
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
 
@@ -29,24 +23,15 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
         img_normalized = img_resized.astype(np.float32) # Keep as float even if all zeros
 
     img_final = np.expand_dims(img_normalized, axis=-1)
-    label_final = label_resized.astype(np.uint8)
+    
+    label_final = np.squeeze(label_resized)
+    
+    label_final = label_final.astype(np.uint8) # Cast to uint8 after squeezing
 
     return img_final, label_final
 
 # --- This function now correctly filters and matches file paths ---
 def prepare_filepaths(path1, path2, n=40):
-    """
-    Prepares lists of (input_nii_path, output_nii_path) tuples.
-    It now explicitly filters for T2w images and their corresponding dseg labels.
-
-    Args:
-        path1 (str): Path to the folder containing 3D input MRI volumes (.nii.gz).
-        path2 (str): Path to the folder containing 3D output segmentation masks (.nii.gz).
-        n (int): Number of volumes to consider from the dataset.
-
-    Returns:
-        list: A list of (input_nii_path, output_nii_path) tuples for all selected volumes.
-    """
     if not path1.endswith('/'):
         path1 += '/'
     if not path2.endswith('/'):
@@ -159,25 +144,14 @@ def data_generator(filepaths_list, slices_per_volume=None, apply_augmentation=Fa
 def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True, slices_per_volume=None):
     """
     Creates a TensorFlow Dataset from the data generator.
-
-    Args:
-        filepaths_list (list): List of (input_nii_path, output_nii_path) tuples.
-        batch_size (int): Batch size for the dataset.
-        shuffle_buffer_size (int): Size of the buffer for shuffling elements.
-        is_training (bool): If True, apply .repeat() and larger shuffle buffer, and enable augmentations.
-        slices_per_volume (int, optional): Number of slices to sample per 3D volume per axis.
-                                            Passed to data_generator.
-
-    Returns:
-        tf.data.Dataset: A TensorFlow dataset that yields batches of (image, label).
     """
     output_signature = (
-        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image
-        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)       # Label
+        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image: (Height, Width, Channel)
+        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)      # Label: (Height, Width) for integer-encoded masks
     )
 
     dataset = tf.data.Dataset.from_generator(
-        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume, apply_augmentation=is_training), # Pass apply_augmentation based on is_training
+        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume, apply_augmentation=is_training),
         output_signature=output_signature
     )
 
@@ -194,12 +168,6 @@ def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_t
     return dataset
 
 def count_slices_in_filepaths(filepaths_list, slices_per_volume=None):
-    """
-    Counts the total number of 2D slices that would be yielded by the data_generator
-    for a given list of file paths. This involves loading each 3D volume
-    to get its shape.
-    """
-    # This tqdm is fine because it's run *before* the tf.data.Dataset is built.
     total_slices = 0
     for img_path, _ in tqdm(filepaths_list, desc="Counting Slices", ncols=75, leave=False):
         try:
@@ -221,24 +189,7 @@ def count_slices_in_filepaths(filepaths_list, slices_per_volume=None):
     return total_slices
 
 # --- Main create_dataset function for external calls ---
-# This is the function you will call from your Colab notebook
 def create_dataset(path1, path2, n=40, s=0.05):
-    """
-    The main function to prepare data for training and testing.
-    It returns file paths split for train/test.
-
-    Args:
-        path1 (str): Path to the folder containing 3D input MRI volumes (.nii.gz).
-        path2 (str): Path to the folder containing 3D output segmentation masks (.nii.gz).
-        n (int): Number of volumes to consider from the dataset.
-        s (float): Split ratio for test set (e.g., 0.1 for 10% test, 90% train).
-                   If s=0, all data is used for training (no test set returned).
-
-    Returns:
-        tuple: (train_filepaths, test_filepaths) where each is a list of
-               (input_nii_path, output_nii_path) tuples.
-               If s=0, returns (all_filepaths, None).
-    """
     all_filepaths = prepare_filepaths(path1, path2, n)
 
     if s > 0:
@@ -247,4 +198,4 @@ def create_dataset(path1, path2, n=40, s=0.05):
         return train_filepaths, test_filepaths
     else:
         print(f"Dataset prepared: {len(all_filepaths)} volumes for training (no test split).")
-        return all_filepaths, None # Return None for test_filepaths if s=0
+        return all_filepaths, None
