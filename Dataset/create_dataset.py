@@ -12,9 +12,15 @@ from skimage.transform import resize
 import tensorflow as tf
 import random
 
+import numpy as np
+from skimage.transform import resize # Ensure this is imported
+
 def preprocess_slice(img_slice_2d, label_slice_2d):
+    print(f"DEBUG: label_slice_2d initial shape: {label_slice_2d.shape}")
+
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
+    print(f"DEBUG: label_resized shape after resize: {label_resized.shape}")
 
     max_val = np.max(img_resized)
     if max_val > 0:
@@ -25,8 +31,10 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     img_final = np.expand_dims(img_normalized, axis=-1)
     
     label_final = np.squeeze(label_resized)
+    print(f"DEBUG: label_final shape AFTER SQUEEZE: {label_final.shape}") # <-- CRITICAL DEBUG LINE
     
     label_final = label_final.astype(np.uint8) # Cast to uint8 after squeezing
+    print(f"DEBUG: label_final shape AFTER CAST: {label_final.shape}")
 
     return img_final, label_final
 
@@ -142,12 +150,9 @@ def data_generator(filepaths_list, slices_per_volume=None, apply_augmentation=Fa
 
 # --- Function to create TensorFlow Datasets from generators ---
 def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True, slices_per_volume=None):
-    """
-    Creates a TensorFlow Dataset from the data generator.
-    """
     output_signature = (
-        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image: (Height, Width, Channel)
-        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)      # Label: (Height, Width) for integer-encoded masks
+        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image
+        tf.TensorSpec(shape=(256, 256), dtype=tf.uint8)       # Label: This must be (256, 256)
     )
 
     dataset = tf.data.Dataset.from_generator(
