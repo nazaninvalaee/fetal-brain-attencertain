@@ -60,29 +60,50 @@ def weighted_categorical_crossentropy(y_true, y_pred, class_weights):
     return K.mean(K.sum(weighted_crossentropy, axis=-1)) # Sum over classes, then mean over spatial/batch
 
 # --- Hybrid Loss Function (Dice + Weighted Categorical Cross-Entropy) ---
-def hybrid_loss(y_true, y_pred, class_weights, dice_weight=0.5, ce_weight=0.5):
-    """
-    Combines Dice Loss and Weighted Categorical Cross-Entropy Loss.
-    Args:
-        y_true (tf.Tensor): Ground truth masks, typically integer encoded (batch_size, H, W).
-                            Will be converted to one-hot inside.
-        y_pred (tf.Tensor): Predicted probabilities. Shape (batch_size, H, W, num_classes).
-        class_weights (tf.Tensor or np.array): Weights for each class in CE loss.
-        dice_weight (float): Weight for the Dice loss component.
-        ce_weight (float): Weight for the Weighted Categorical Cross-Entropy component.
-    Returns:
-        tf.Tensor: Combined loss value.
-    """
-    # Determine num_classes from y_pred's last dimension
-    num_classes = K.int_shape(y_pred)[-1]
+def hybrid_loss(y_true, y_pred, class_weights, dice_weight, ce_weight): # Add num_classes as a parameter if not global
+    # --- IMPORTANT: Ensure y_true has the correct shape for one-hot encoding ---
+    # y_true comes in as (batch_size, 256, 256, 1)
+    # We need to squeeze out the last '1' dimension before one_hot
+    y_true_squeezed = tf.squeeze(y_true, axis=-1) # Shape will be (batch_size, 256, 256)
 
-    # Convert y_true to one-hot encoding for both loss functions
-    # Assuming y_true is (batch_size, H, W) with integer class IDs
-    y_true_one_hot = tf.one_hot(tf.cast(y_true, tf.int32), num_classes)
+    # Cast y_true to integer type for one-hot encoding
+    y_true_one_hot = tf.one_hot(tf.cast(y_true_squeezed, tf.int32), depth=NUM_CLASSES)
+    # y_true_one_hot now has shape (batch_size, 256, 256, NUM_CLASSES) - CORRECT!
 
-    # Calculate individual losses
-    dice = dice_loss(y_true_one_hot, y_pred)
-    ce = weighted_categorical_crossentropy(y_true_one_hot, y_pred, class_weights)
+    # --- Dice Loss Calculation ---
+    # Apply softmax to y_pred if it's raw logits (common for segmentation models)
+    y_pred_softmax = tf.nn.softmax(y_pred, axis=-1)
 
-    # Combine them
-    return (dice_weight * dice) + (ce_weight * ce)
+    # Add a small epsilon for numerical stability to avoid division by zero
+    epsilon = 1e-7
+
+    # Calculate intersection and union for Dice coefficient
+    intersection = tf.reduce_sum(y_true_one_hot * y_pred_softmax, axis=[1, 2])
+    union = tf.reduce_sum(y_true_one_hot + y_pred_softmax, axis=[1, 2])
+
+    # Compute Dice coefficient and Dice loss per class
+    dice_coefficient = (2. * intersection + epsilon) / (union + epsilon)
+    dice_loss_per_class = 1. - dice_coefficient
+
+    # Apply class weights to Dice Loss (assuming class_weights is a 1D tensor [NUM_CLASSES])
+    weighted_dice_loss = tf.reduce_mean(dice_loss_per_class * class_weights) # Reduce mean across batch and classes
+
+    # --- Cross-Entropy Loss Calculation ---
+    # Use from_logits=True if y_pred is raw logits (recommended for stability)
+    ce_loss_per_pixel = tf.nn.softmax_cross_entropy_with_logits(
+        labels=y_true_one_hot,
+        logits=y_pred # Use raw logits here
+    )
+
+    # Apply class weights to Cross-Entropy Loss
+    # This typically involves re-weighting based on the true class of each pixel
+    # If class_weights is (NUM_CLASSES,), you might need to gather weights for each pixel:
+    # weighted_ce_loss_per_pixel = ce_loss_per_pixel * tf.gather(class_weights, tf.cast(y_true_squeezed, tf.int32))
+    # Then take the mean over all pixels
+    # For simplicity, if class_weights is meant to be applied globally after summing:
+    ce_loss = tf.reduce_mean(ce_loss_per_pixel) # Mean over batch and pixels
+
+    # Combine losses
+    total_loss = (dice_weight * weighted_dice_loss) + (ce_weight * ce_loss)
+
+    return total_loss
