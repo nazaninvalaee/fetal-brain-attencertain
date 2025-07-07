@@ -2,6 +2,8 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 import numpy as np # Used for defining class_weights as a numpy array
 
+NUM_CLASSES = 8
+
 # --- Dice Loss Function ---
 def dice_loss(y_true, y_pred, smooth=1e-7):
     """
