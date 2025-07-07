@@ -16,12 +16,8 @@ import numpy as np
 from skimage.transform import resize # Ensure this is imported
 
 def preprocess_slice(img_slice_2d, label_slice_2d):
-    # Debug prints (keep them for now)
-    print(f"DEBUG: label_slice_2d initial shape: {label_slice_2d.shape}")
-
     img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
     label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
-    print(f"DEBUG: label_resized shape after resize: {label_resized.shape}")
 
     max_val = np.max(img_resized)
     if max_val > 0:
@@ -29,18 +25,13 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     else:
         img_normalized = img_resized.astype(np.float32)
 
-    img_final = np.expand_dims(img_normalized, axis=-1) # Image is (256, 256, 1)
-    
-    label_processed = np.squeeze(label_resized) # Ensure it's (256, 256) first by removing all singleton dimensions
-    print(f"DEBUG: label_processed shape AFTER SQUEEZE: {label_processed.shape}")
-    
-    # --- NEW ADDITION FOR LABEL CHANNEL DIMENSION ---
-    # Explicitly add a channel dimension of 1 to the label
-    label_final = np.expand_dims(label_processed, axis=-1) # This will make it (256, 256, 1)
-    # --- END NEW ADDITION ---
+    img_final = np.expand_dims(img_normalized, axis=-1)
 
-    label_final = label_final.astype(np.uint8) # Cast after all shape manipulations
-    print(f"DEBUG: label_final shape AFTER EXPAND_DIMS AND CAST: {label_final.shape}") # Verify this is (256, 256, 1)
+    label_processed = np.squeeze(label_resized)
+
+    label_final = np.expand_dims(label_processed, axis=-1)
+
+    label_final = label_final.astype(np.uint8) 
 
     return img_final, label_final
 
@@ -53,7 +44,7 @@ def prepare_filepaths(path1, path2, n=40):
 
     # Filter for T2w images in the input directory
     input_image_filenames = sorted([f for f in os.listdir(path1) if f.endswith('_T2w.nii.gz')])
-    
+
     # Store output filenames with their base names for easy lookup
     # We'll prioritize _dseg.nii.gz as the target label for now.
     output_label_map = {}
@@ -67,10 +58,10 @@ def prepare_filepaths(path1, path2, n=40):
     # Limit to 'n' volumes from the filtered input images
     for i in range(min(n, len(input_image_filenames))):
         img_filename = input_image_filenames[i]
-        
+
         # Extract the base name for matching (e.g., 'sub-040_rec-mial')
         base_name = img_filename.replace('_T2w.nii.gz', '')
-        
+
         # Look up the corresponding label file in the output directory map
         label_path = output_label_map.get(base_name)
 
@@ -145,7 +136,8 @@ def data_generator(filepaths_list, slices_per_volume=None, apply_augmentation=Fa
                         if random.random() < 0.5: # 50% chance for blur
                            current_img = blur(current_img, apply_blur=True) # blur function already has internal randomness for kernel size
 
-                    yield current_img, current_label
+                    # --- NEW CHANGE: Convert to TensorFlow Tensors with explicit dtypes before yielding ---
+                    yield tf.convert_to_tensor(current_img, dtype=tf.float32), tf.convert_to_tensor(current_label, dtype=tf.uint8)
 
             del img_volume, label_volume
             gc.collect()
@@ -155,24 +147,29 @@ def data_generator(filepaths_list, slices_per_volume=None, apply_augmentation=Fa
             continue
 
 # --- Function to create TensorFlow Datasets from generators ---
-def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000, is_training=True, slices_per_volume=None):
+def create_tf_dataset(filepaths_list, batch_size, shuffle_buffer_size=1000,
+                      is_training=True, slices_per_volume=None,
+                      force_no_augmentation=False): # <--- ADD THIS PARAMETER
     output_signature = (
-        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image (unchanged)
-        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.uint8)    # Label: NOW EXPECT (256, 256, 1)
+        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.float32), # Image
+        tf.TensorSpec(shape=(256, 256, 1), dtype=tf.uint8)    # Label
     )
 
+    # Determine whether to apply augmentation: only if is_training and not forced off
+    _apply_augmentation = is_training and not force_no_augmentation # <--- USE THIS LOGIC
+
     dataset = tf.data.Dataset.from_generator(
-        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume, apply_augmentation=is_training),
+        lambda: data_generator(filepaths_list, slices_per_volume=slices_per_volume,
+                               apply_augmentation=_apply_augmentation), # <--- USE _apply_augmentation
         output_signature=output_signature
     )
 
     if is_training:
         dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
         dataset = dataset.batch(batch_size)
-        dataset = dataset.repeat() # Important for training dataset
+        dataset = dataset.repeat()
         dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
     else:
-        # For validation/test, typically you don't repeat, and shuffle might not be needed
         dataset = dataset.batch(batch_size)
         dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
 
