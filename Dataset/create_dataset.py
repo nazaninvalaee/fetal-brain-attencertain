@@ -14,25 +14,25 @@ import random
 from skimage.transform import resize 
 
 def preprocess_slice(img_slice_2d, label_slice_2d):
-    img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
-    label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
+    img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
+    label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
 
-    max_val = np.max(img_resized)
-    if max_val > 0:
-        img_normalized = img_resized.astype(np.float32) / max_val
-    else:
-        img_normalized = img_resized.astype(np.float32)
+    max_val = np.max(img_resized)
+    if max_val > 0:
+        img_normalized = img_resized.astype(np.float32) / max_val
+    else:
+        img_normalized = img_resized.astype(np.float32)
 
-    img_final = np.expand_dims(img_normalized, axis=-1)
+    img_final = np.expand_dims(img_normalized, axis=-1)
 
-    label_processed = np.squeeze(label_resized)
+    label_processed = np.squeeze(label_resized)
 
-    label_final = np.expand_dims(label_processed, axis=-1)
+    label_final = np.expand_dims(label_processed, axis=-1)
 
-    label_final = label_final.astype(np.uint8) 
+    label_final = label_final.astype(np.uint8) 
 
-    return img_final, label_final
-
+    return img_final, label_final
+  
 # --- This function now correctly filters and matches file paths ---
 def prepare_filepaths(path1, path2, n=40):
     if not path1.endswith('/'):
