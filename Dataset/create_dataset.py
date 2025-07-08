@@ -6,13 +6,11 @@ from tqdm import tqdm
 import gc
 from sklearn.model_selection import train_test_split
 from Dataset.preprocessing import reduce_2d, flip, blur, \
-                                  random_brightness_contrast, random_gamma_correction, \
-                                  random_affine_transform, elastic_transform
-from skimage.transform import resize
+                                  random_brightness_contrast, random_gamma_correction, \
+                                  random_affine_transform, elastic_transform
+from skimage.transform import resize # Ensure this is imported
 import tensorflow as tf
 import random
-
-# Ensure skimage.transform.resize is imported
 from skimage.transform import resize 
 
 def preprocess_slice(img_slice_2d, label_slice_2d):
