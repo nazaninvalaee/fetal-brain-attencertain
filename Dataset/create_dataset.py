@@ -13,8 +13,12 @@ import tensorflow as tf
 import random
 
 def preprocess_slice(img_slice_2d, label_slice_2d):
-    img_resized = resize(img_slice_2d, (256, 256), preserve_range=True, anti_aliasing=True)
-    label_resized = resize(label_slice_2d, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
+    # Ensure inputs are truly 2D by squeezing any singleton dimensions
+    img_slice_2d_squeezed = np.squeeze(img_slice_2d)
+    label_slice_2d_squeezed = np.squeeze(label_slice_2d)
+
+    img_resized = resize(img_slice_2d_squeezed, (256, 256), preserve_range=True, anti_aliasing=True)
+    label_resized = resize(label_slice_2d_squeezed, (256, 256), order=0, anti_aliasing=False, preserve_range=True)
 
     max_val = np.max(img_resized)
     if max_val > 0:
@@ -22,11 +26,10 @@ def preprocess_slice(img_slice_2d, label_slice_2d):
     else:
         img_normalized = img_resized.astype(np.float32)
 
-    img_final = np.expand_dims(img_normalized, axis=-1)
+    img_final = np.expand_dims(img_normalized, axis=-1) # This adds a channel dimension (256, 256, 1)
 
-    label_processed = np.squeeze(label_resized)
-
-    label_final = np.expand_dims(label_processed, axis=-1)
+    # label_resized should now be guaranteed 2D after initial squeeze and resize
+    label_final = np.expand_dims(label_resized, axis=-1) # Add channel dim (256, 256, 1)
 
     label_final = label_final.astype(np.uint8)
 
